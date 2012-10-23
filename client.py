@@ -9,10 +9,53 @@ socket = context.socket(zmq.REQ)
 socket.connect ("tcp://127.0.0.1:9001")
 print "connected"
 
-for i in range(100):
-    socket.send("hello cruel world")
-    print "sent hello cruel world"
+def serialize(*parts):
+    message = "*%d\r\n" % len(parts)
 
+    for part in parts:
+        message += "$%d\r\n%s\r\n" % (len(part), part)
+
+    return message
+
+def sendmsg(message):
+    socket.send(serialize(message.split(' ')))
+    print "sent %s" % message
     r = socket.recv()
     print "%s received" % r
 
+for i in range(100):
+    msg = "create myfield 30 30"
+    sendmsg(msg)
+    msg = "insert myfield birds"
+    sendmsg(msg)
+    msg = "insert myfield birds"
+    sendmsg(msg)
+    msg = "insert myfield birds"
+    sendmsg(msg)
+    msg = "insert myfield halp"
+    sendmsg(msg)
+    msg = "insert myfield boom"
+    sendmsg(msg)
+    msg = "insert myfield boom"
+    sendmsg(msg)
+    msg = "insert myfield boom"
+    sendmsg(msg)
+    msg = "insert myfield boom"
+    sendmsg(msg)
+    msg = "insert myfield boom"
+    sendmsg(msg)
+    msg = "insert myfield zoom"
+    sendmsg(msg)
+    msg = "insert myfield zoom"
+    sendmsg(msg)
+    msg = "insert myfield zoom"
+    sendmsg(msg)
+    
+    msg = "query myfield birds"
+    sendmsg(msg)
+    msg = "query myfield halp"
+    sendmsg(msg)
+    msg = "query myfield boom"
+    sendmsg(msg)
+    msg = "query myfield zoom"
+    sendmsg(msg)

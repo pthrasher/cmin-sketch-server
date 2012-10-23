@@ -4,20 +4,19 @@
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
-#include <avl.h>
 
-typedef struct _field {
-    unsigned int width;
-    unsigned int depth;
-    unsigned long ** rows;
-} field_t;
+#include "avl.h"
+#include "sketches.h"
+#include "murmur.h"
+
+
+#define EINVALIDCOMMAND 201
 
 typedef struct _server {
     void * context;
     void * socket;
     long requestCount;
     long replyCount;
-    field_t * field;
 } server_t;
 
 /*
@@ -86,32 +85,7 @@ int newServer(server_t * server) {
 
 server_t SERVER;
 
-int newField(field_t * field, unsigned int width, unsigned int depth) {
 
-    field->width = width;
-    field->depth = depth;
-
-    unsigned long ** rows = (unsigned long**)malloc(depth * sizeof(unsigned long*));
-    if (NULL == rows) {
-        return -1; /* error */
-    }
-
-    unsigned int a;
-    unsigned int b;
-    unsigned long * row;
-    for (a = 0; a < depth; a++) {
-        row = (unsigned long*)malloc(width * sizeof(unsigned long));
-        for (b = 0; b < width; b++) {
-            row[b] = 0;
-        }
-        rows[a] = row;
-    }
-
-    field->rows = rows;
-    return 1;
-}
-
-int createField(char * name, unsigned int width, 
 /*
 EAGAIN
 Non-blocking mode was requested and no messages are available at the moment.
@@ -136,8 +110,33 @@ int shutdown() {
     return 1;
 }
 
-char * zmsgToString(zmq_msg_t * message) {
+char *substring(char *string, int position, int length) 
+{
+   char *pointer;
+   int c;
+ 
+   pointer = malloc(length+1);
+ 
+   if (pointer == NULL)
+   {
+      printf("Unable to allocate memory.\n");
+      exit(EXIT_FAILURE);
+   }
+ 
+   for (c = 0 ; c < position -1 ; c++) 
+      string++; 
+ 
+   for (c = 0 ; c < length ; c++)
+   {
+      *(pointer+c) = *string;      
+      string++;   
+   }
+ 
+   *(pointer+c) = '\0';
+ 
+   return pointer;
 }
+
 
 /* Language spec:
 
@@ -151,10 +150,85 @@ char * zmsgToString(zmq_msg_t * message) {
         Returns stats about the server.
 
  */
-int handleMessage(zmq_msg_t * reply, char * message) {
+
+int parseMessage(char * message, char ** words, int wordsc) {
+
+    int numArgs = 0;
+    int wordLen = 0;
+    char * word;
+    char * tmp;
+    int needsArgCount = 1;
+    int needsWordLen = 1;
+    int i = 0;
+
+
+    word = strtok(message, "\r\n");
+    while (word != NULL) {
+        if (wordLen == 0) {
+            wordLen = strlen(word);
+        }
+
+        if (word[0] == '*' && needsArgCount) {
+            tmp = substring(word, 1, wordLen - 1);
+            numArgs = atoi(tmp);
+            needsArgCount = 0;
+            wordLen = 0;
+        } else if (word[0] == '$' && needsWordLen) {
+            tmp = substring(word, 1, wordLen - 1);
+            wordLen = atoi(tmp);
+            needsWordLen = 0;
+        } else {
+            words[i] = word;
+            needsWordLen = 1;
+            wordLen = 0;
+            i++;
+        }
+
+        word = strtok(message, "\r\n");
+    }
+
+    return 1;
+}
+
+int setReply (zmq_msg_t * reply, char * message) {
+    size_t len = strlen(message);
+    memcpy(zmq_msg_data(reply), message, len);
+    return 1;
+}
+
+int handleMessage (zmq_msg_t * reply, char * message) {
     int ret;
 
+    char ** argv;
+    int argc;
 
+    ret = parseMessage(message, argv, argc);
+    if (ret == -1) {
+        errno = EINVALIDCOMMAND;
+        return -1;
+    }
+
+    if (strcasecmp(argv[0], "create")) {
+        ret = newField(argv[1], (unsigned int)atoi(argv[2]), (unsigned int)atoi(argv[3]));
+        ret = setReply(reply, "OK");
+    } else if (strcasecmp(argv[0], "drop")) {
+        ret = dropField(argv[1]);
+        ret = setReply(reply, "OK");
+    } else if (strcasecmp(argv[0], "insert")) {
+        ret = insertIntoField(argv[1], argv[2]);
+        ret = setReply(reply, "OK");
+    } else if (strcasecmp(argv[0], "query")) {
+        unsigned long result = queryFromField(argv[1], argv[2]);
+        const int n = snprintf(NULL, 0, "%lu", result);
+        char buf[n+1];
+        int c = snprintf(buf, n+1, "%lu", result);
+        ret = setReply(reply, buf);
+    } else if (strcasecmp(argv[0], "stats")) {
+        ret = setReply(reply, "Not implemented yet.");
+    } else {
+        ret = setReply(reply, "Not implemented yet.");
+    }
+    return 1;
 
 }
 
@@ -164,20 +238,12 @@ int main(int argc, char const* argv[]) {
     int ret;
 
     errno = 0;
-    field_t field;
 
     ret = newServer(&SERVER);
     if (ret == -1) {
         return shutdown(); /* error */
     }
 
-    ret = newField(&field, 10, 10);
-    if (ret == -1) {
-        return shutdown(); /* error */
-    }
-
-    SERVER.field = &field;
-    errno = 0;
 
     for (;;) {
         //  Wait for next request from client
