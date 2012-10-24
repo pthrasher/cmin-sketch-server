@@ -123,6 +123,7 @@ int newField(char * name, unsigned int width, unsigned int depth) {
 }
 
 int insertIntoField(char * name, char * value) {
+    printf("Inserting: %s INTO %s\n", value, name);
     int ret;
 
     field_t * field = avl_lookup(fields, name);

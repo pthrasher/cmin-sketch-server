@@ -9,16 +9,17 @@ socket = context.socket(zmq.REQ)
 socket.connect ("tcp://127.0.0.1:9001")
 print "connected"
 
-def serialize(*parts):
-    message = "*%d\r\n" % len(parts)
+def serialize(original):
+    words = original.split(' ')
+    message = "*%d\r\n" % len(words)
 
-    for part in parts:
-        message += "$%d\r\n%s\r\n" % (len(part), part)
+    for word in words:
+        message += "$%d\r\n%s\r\n" % (len(word), word)
 
     return message
 
 def sendmsg(message):
-    socket.send(serialize(message.split(' ')))
+    socket.send(serialize(message))
     print "sent %s" % message
     r = socket.recv()
     print "%s received" % r
